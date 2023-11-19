@@ -24,6 +24,18 @@ contract SuaveGatedFeeHook is BaseHook, AxiomV2Client {
     uint24 private _swapperReducedFee;
     uint256 private _lastBlockNumber;
 
+    // axiom querySchema for our 'isSolver' check
+    bytes32 querySchema0;
+    // axiom querySchema for our swap volume check
+    bytes32 querySchema1;
+
+    event AxiomV2Callback(
+        uint64 indexed sourceChainId,
+        address callerAddr,
+        bytes32 indexed querySchema,
+        uint256 indexed queryId
+    );
+
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
     // Not initializing this in constructor, so we'll have to do a function call to set it
@@ -43,14 +55,21 @@ contract SuaveGatedFeeHook is BaseHook, AxiomV2Client {
             });
     }
 
+    function setAxiomV2QuerySchema0(bytes32 _querySchema) public {
+        querySchema0 = _querySchema;
+    }
+
+    function setAxiomV2QuerySchema1(bytes32 _querySchema) public {
+        querySchema1 = _querySchema;
+    }
+
     function _axiomV2Callback(
         uint64 sourceChainId,
         address callerAddr,
         bytes32 querySchema,
         uint256 queryId,
         bytes32[] calldata axiomResults,
-        bytes calldata callbackExtraData,
-        address axiomV2QueryAddress
+        bytes calldata callbackExtraData
     ) internal virtual override {
         // TODO - manage these maps!
         //mapping(address => bool) public isSolver;
@@ -58,23 +77,24 @@ contract SuaveGatedFeeHook is BaseHook, AxiomV2Client {
         address userAddress = address(uint160(uint256(axiomResults[0])));
 
         // query0 will be the cowswap solver one
-        if (axiomV2QueryAddress == axiomV2QueryAddress0) {
+        if (querySchema == querySchema0) {
             // No other params passsed/needed - if proof was passed in the address must be a solver
             isSolver[userAddress] = true;
         }
         // query1 will be user's total trading volume
-        else {
+        else if (querySchema == querySchema1) {
             uint256 swapVolume = uint256(axiomResults[1]);
             // we want to overwrite here -
             swapTotals[userAddress] = swapVolume;
         }
+
+        emit AxiomV2Callback(sourceChainId, callerAddr, querySchema, queryId);
     }
 
     function _validateAxiomV2Call(
         uint64 sourceChainId,
         address callerAddr,
-        bytes32 querySchema,
-        address axiomV2QueryAddress
+        bytes32 querySchema
     ) internal virtual override {
         // Hardcode expected chain to 5 for goerli for now?
         uint64 callbackSourceChainId = 5;
@@ -82,20 +102,12 @@ contract SuaveGatedFeeHook is BaseHook, AxiomV2Client {
             sourceChainId == callbackSourceChainId,
             "AxiomV2: caller sourceChainId mismatch"
         );
-        // TODO - we should add validation of the schema
-        // if (axiomV2QueryAddress == axiomV2QueryAddress0) {
-        //     require(
-        //         querySchema == axiomCallbackQuerySchema0,
-        //         "AxiomV2: query schema mismatch"
-        //     );
-        // }
-        // // we already asserted it's one of these two, so don't need explicit check for other one
-        // else {
-        //     require(
-        //         querySchema == axiomCallbackQuerySchema1,
-        //         "AxiomV2: query schema mismatch"
-        //     );
-        // }
+        // Would be nice to have validation of schema,
+        // but not sure how to get values before deployment
+        //require(
+        //    querySchema == querySchema0 || querySchema == querySchema1,
+        //    "AxiomV2: query schema mismatch"
+        //);
     }
 
     // TODO - need to gate access to this function so it can ONLY be called by a suave transaction

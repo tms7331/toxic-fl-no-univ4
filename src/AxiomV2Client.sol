@@ -5,10 +5,10 @@ pragma solidity ^0.8.19;
 import {IAxiomV2Client} from "./interfaces/IAxiomV2Client.sol";
 
 abstract contract AxiomV2Client {
-    //address public immutable axiomV2QueryAddress;
-    // Making it mutable to simplify testing/debugging...
-    address public axiomV2QueryAddress0;
-    address public axiomV2QueryAddress1;
+    // Hardcoding address on goerli
+    // Reference: https://docs.axiom.xyz/transparency-and-security/contract-addresses
+    address public immutable axiomV2QueryAddress =
+        0xBd5307B0Bf573E3F2864Af960167b24Aa346952b;
 
     event AxiomV2Call(
         uint64 indexed sourceChainId,
@@ -22,14 +22,6 @@ abstract contract AxiomV2Client {
     //    axiomV2QueryAddress = _axiomV2QueryAddress;
     //}
 
-    function setAxiomV2QueryAddress0(address _axiomV2QueryAddress) public {
-        axiomV2QueryAddress0 = _axiomV2QueryAddress;
-    }
-
-    function setAxiomV2QueryAddress1(address _axiomV2QueryAddress) public {
-        axiomV2QueryAddress1 = _axiomV2QueryAddress;
-    }
-
     function axiomV2Callback(
         uint64 sourceChainId,
         address callerAddr,
@@ -39,34 +31,26 @@ abstract contract AxiomV2Client {
         bytes calldata callbackExtraData
     ) external {
         require(
-            msg.sender == axiomV2QueryAddress0 ||
-                msg.sender == axiomV2QueryAddress1,
+            msg.sender == axiomV2QueryAddress,
             "AxiomV2Client: caller must be axiomV2QueryAddress"
         );
         //emit AxiomV2Call(sourceChainId, callerAddr, querySchema, queryId);
 
-        _validateAxiomV2Call(
-            sourceChainId,
-            callerAddr,
-            querySchema,
-            msg.sender
-        );
+        _validateAxiomV2Call(sourceChainId, callerAddr, querySchema);
         _axiomV2Callback(
             sourceChainId,
             callerAddr,
             querySchema,
             queryId,
             axiomResults,
-            callbackExtraData,
-            msg.sender
+            callbackExtraData
         );
     }
 
     function _validateAxiomV2Call(
         uint64 sourceChainId,
         address callerAddr,
-        bytes32 querySchema,
-        address axiomV2QueryAddress
+        bytes32 querySchema
     ) internal virtual;
 
     function _axiomV2Callback(
@@ -75,7 +59,6 @@ abstract contract AxiomV2Client {
         bytes32 querySchema,
         uint256 queryId,
         bytes32[] calldata axiomResults,
-        bytes calldata callbackExtraData,
-        address axiomV2QueryAddress
+        bytes calldata callbackExtraData
     ) internal virtual;
 }
