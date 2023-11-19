@@ -15,6 +15,10 @@ contract SuaveGatedFeeHook is BaseHook, AxiomV2Client {
 
     mapping(PoolId => uint256 count) public beforeSwapCount;
 
+    // We will store the results of our axiom queries here, but these maps will actually be queried from suave!
+    mapping(address => bool) public isSolver;
+    mapping(address => uint256) public swapTotals;
+
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
     // Not initializing this in constructor, so we'll have to do a function call to set it
@@ -41,14 +45,18 @@ contract SuaveGatedFeeHook is BaseHook, AxiomV2Client {
         uint256 queryId,
         bytes32[] calldata axiomResults,
         bytes calldata callbackExtraData
-    ) internal virtual override {}
+    ) internal virtual override {
+        // TODO - manage these maps!
+        //mapping(address => bool) public isSolver;
+        //mapping(address => uint256) public swapTotals;
+    }
 
     function _validateAxiomV2Call(
         uint64 sourceChainId,
         address callerAddr,
         bytes32 querySchema
     ) internal virtual override {
-        // Hardcode to 5 for goerli for now?
+        // Hardcode expected chain to 5 for goerli for now?
         uint64 callbackSourceChainId = 5;
         require(
             sourceChainId == callbackSourceChainId,
