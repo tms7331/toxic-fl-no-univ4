@@ -21,12 +21,7 @@ contract SuaveGatedFeeHookScript is Script {
 
     function run() public {
         // hook contracts must have specific flags encoded in the address
-        uint160 flags = uint160(
-            Hooks.BEFORE_SWAP_FLAG |
-                Hooks.AFTER_SWAP_FLAG |
-                Hooks.BEFORE_MODIFY_POSITION_FLAG |
-                Hooks.AFTER_MODIFY_POSITION_FLAG
-        );
+        uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG);
 
         // Mine a salt that will produce a hook address with the correct flags
         (address hookAddress, bytes32 salt) = HookMiner.find(
