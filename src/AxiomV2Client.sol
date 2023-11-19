@@ -45,21 +45,28 @@ abstract contract AxiomV2Client {
         );
         //emit AxiomV2Call(sourceChainId, callerAddr, querySchema, queryId);
 
-        _validateAxiomV2Call(sourceChainId, callerAddr, querySchema);
+        _validateAxiomV2Call(
+            sourceChainId,
+            callerAddr,
+            querySchema,
+            msg.sender
+        );
         _axiomV2Callback(
             sourceChainId,
             callerAddr,
             querySchema,
             queryId,
             axiomResults,
-            callbackExtraData
+            callbackExtraData,
+            msg.sender
         );
     }
 
     function _validateAxiomV2Call(
         uint64 sourceChainId,
         address callerAddr,
-        bytes32 querySchema
+        bytes32 querySchema,
+        address axiomV2QueryAddress
     ) internal virtual;
 
     function _axiomV2Callback(
@@ -68,6 +75,7 @@ abstract contract AxiomV2Client {
         bytes32 querySchema,
         uint256 queryId,
         bytes32[] calldata axiomResults,
-        bytes calldata callbackExtraData
+        bytes calldata callbackExtraData,
+        address axiomV2QueryAddress
     ) internal virtual;
 }

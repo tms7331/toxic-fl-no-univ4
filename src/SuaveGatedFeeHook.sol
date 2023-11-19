@@ -19,6 +19,11 @@ contract SuaveGatedFeeHook is BaseHook, AxiomV2Client {
     mapping(address => bool) public isSolver;
     mapping(address => uint256) public swapTotals;
 
+    // These will be set by suave function calls!
+    address private _swapperAddress;
+    uint24 private _swapperReducedFee;
+    uint256 private _lastBlockNumber;
+
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
     // Not initializing this in constructor, so we'll have to do a function call to set it
@@ -44,17 +49,32 @@ contract SuaveGatedFeeHook is BaseHook, AxiomV2Client {
         bytes32 querySchema,
         uint256 queryId,
         bytes32[] calldata axiomResults,
-        bytes calldata callbackExtraData
+        bytes calldata callbackExtraData,
+        address axiomV2QueryAddress
     ) internal virtual override {
         // TODO - manage these maps!
         //mapping(address => bool) public isSolver;
         //mapping(address => uint256) public swapTotals;
+        address userAddress = address(uint160(uint256(axiomResults[0])));
+
+        // query0 will be the cowswap solver one
+        if (axiomV2QueryAddress == axiomV2QueryAddress0) {
+            // No other params passsed/needed - if proof was passed in the address must be a solver
+            isSolver[userAddress] = true;
+        }
+        // query1 will be user's total trading volume
+        else {
+            uint256 swapVolume = uint256(axiomResults[1]);
+            // we want to overwrite here -
+            swapTotals[userAddress] = swapVolume;
+        }
     }
 
     function _validateAxiomV2Call(
         uint64 sourceChainId,
         address callerAddr,
-        bytes32 querySchema
+        bytes32 querySchema,
+        address axiomV2QueryAddress
     ) internal virtual override {
         // Hardcode expected chain to 5 for goerli for now?
         uint64 callbackSourceChainId = 5;
@@ -62,21 +82,63 @@ contract SuaveGatedFeeHook is BaseHook, AxiomV2Client {
             sourceChainId == callbackSourceChainId,
             "AxiomV2: caller sourceChainId mismatch"
         );
-        // TODO - let's add/track this...
-        // require(
-        //     querySchema == axiomCallbackQuerySchema,
-        //     "AxiomV2: query schema mismatch"
-        // );
+        // TODO - we should add validation of the schema
+        // if (axiomV2QueryAddress == axiomV2QueryAddress0) {
+        //     require(
+        //         querySchema == axiomCallbackQuerySchema0,
+        //         "AxiomV2: query schema mismatch"
+        //     );
+        // }
+        // // we already asserted it's one of these two, so don't need explicit check for other one
+        // else {
+        //     require(
+        //         querySchema == axiomCallbackQuerySchema1,
+        //         "AxiomV2: query schema mismatch"
+        //     );
+        // }
     }
 
-    function setUserFee() public {}
+    // TODO - need to gate access to this function so it can ONLY be called by a suave transaction
+    function setUserFee(
+        address swapperAddress,
+        uint24 swapperReducedFee
+    ) public {
+        _swapperAddress = swapperAddress;
+        _swapperReducedFee = swapperReducedFee;
+    }
+
+    // This gets our dynamic fee
+    function getFee(
+        address sender,
+        PoolKey calldata key
+    ) external view returns (uint24) {
+        // If user matches the user who has had their fees set, return the adjusted rate
+        if (sender == _swapperAddress) {
+            return _swapperReducedFee;
+        }
+        // 1% feees are the default
+        return 10000;
+    }
 
     function beforeSwap(
-        address,
+        address swapper,
         PoolKey calldata key,
         IPoolManager.SwapParams calldata,
         bytes calldata
     ) external override returns (bytes4) {
+        // Make sure only the specified user gets the fee reduction
+        //_swapperAddress
+
+        // Enforce top of the block auction
+        if (block.number > _lastBlockNumber) {
+            // TODO - how exactly can we confirm this caller won the suave auction?
+            // Idea for very ugly mechanism to enforce this would be to have hashes, sync up
+            // some kind of lists in both contracts so 'calldata' has to be a secret word that will
+            // produce an expected hash, but this is very ugly and would require a lot of storage
+
+            _lastBlockNumber = block.number;
+        }
+
         return BaseHook.beforeSwap.selector;
     }
 }

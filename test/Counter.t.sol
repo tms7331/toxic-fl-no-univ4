@@ -2,6 +2,7 @@
 pragma solidity ^0.8.19;
 
 import "forge-std/Test.sol";
+import "forge-std/console2.sol";
 import {GasSnapshot} from "forge-gas-snapshot/GasSnapshot.sol";
 import {IHooks} from "@uniswap/v4-core/contracts/interfaces/IHooks.sol";
 import {Hooks} from "@uniswap/v4-core/contracts/libraries/Hooks.sol";
@@ -11,6 +12,8 @@ import {PoolKey} from "@uniswap/v4-core/contracts/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/contracts/types/PoolId.sol";
 import {Deployers} from "@uniswap/v4-core/contracts/../test/utils/Deployers.sol";
 import {CurrencyLibrary, Currency} from "@uniswap/v4-core/contracts/types/Currency.sol";
+import {FeeLibrary} from "@uniswap/v4-core/contracts/libraries/FeeLibrary.sol";
+import {BalanceDelta} from "@uniswap/v4-core/contracts/types/BalanceDelta.sol";
 import {HookTest} from "./utils/HookTest.sol";
 import {SuaveGatedFeeHook} from "../src/SuaveGatedFeeHook.sol";
 import {HookMiner} from "./utils/HookMiner.sol";
@@ -19,7 +22,7 @@ contract SuaveGatedFeeHookTest is HookTest, Deployers, GasSnapshot {
     using PoolIdLibrary for PoolKey;
     using CurrencyLibrary for Currency;
 
-    SuaveGatedFeeHook counter;
+    SuaveGatedFeeHook suaveHook;
     PoolKey poolKey;
     PoolId poolId;
 
@@ -28,23 +31,18 @@ contract SuaveGatedFeeHookTest is HookTest, Deployers, GasSnapshot {
         HookTest.initHookTestEnv();
 
         // Deploy the hook to an address with the correct flags
-        uint160 flags = uint160(
-            Hooks.BEFORE_SWAP_FLAG |
-                Hooks.AFTER_SWAP_FLAG |
-                Hooks.BEFORE_MODIFY_POSITION_FLAG |
-                Hooks.AFTER_MODIFY_POSITION_FLAG
-        );
+        uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG);
         (address hookAddress, bytes32 salt) = HookMiner.find(
             address(this),
             flags,
             type(SuaveGatedFeeHook).creationCode,
             abi.encode(address(manager))
         );
-        counter = new SuaveGatedFeeHook{salt: salt}(
+        suaveHook = new SuaveGatedFeeHook{salt: salt}(
             IPoolManager(address(manager))
         );
         require(
-            address(counter) == hookAddress,
+            address(suaveHook) == hookAddress,
             "SuaveGatedFeeHookTest: hook address mismatch"
         );
 
@@ -52,12 +50,14 @@ contract SuaveGatedFeeHookTest is HookTest, Deployers, GasSnapshot {
         poolKey = PoolKey(
             Currency.wrap(address(token0)),
             Currency.wrap(address(token1)),
-            3000,
+            3000 | FeeLibrary.DYNAMIC_FEE_FLAG,
             60,
-            IHooks(counter)
+            IHooks(suaveHook)
         );
         poolId = poolKey.toId();
+        console2.log("Pre Pool initialized");
         manager.initialize(poolKey, SQRT_RATIO_1_1, ZERO_BYTES);
+        console2.log("Pool initialized");
 
         // Provide liquidity to the pool
         modifyPositionRouter.modifyPosition(
@@ -81,19 +81,40 @@ contract SuaveGatedFeeHookTest is HookTest, Deployers, GasSnapshot {
         );
     }
 
-    function testSuaveGatedFeeHookHooks() public {
-        // do a different test...
-        // positions were created in setup()
-        //assertEq(counter.beforeModifyPositionCount(poolId), 3);
-        //assertEq(counter.afterModifyPositionCount(poolId), 3);
-        //assertEq(counter.beforeSwapCount(poolId), 0);
-        //assertEq(counter.afterSwapCount(poolId), 0);
-        //// Perform a test swap //
-        //int256 amount = 100;
-        //bool zeroForOne = true;
-        //swap(poolKey, amount, zeroForOne, ZERO_BYTES);
+    function testSuaveGatedFeeHookDynamicFee() public {
+        // Make sure hooks are dynamically set
+        int256 amount = 1000;
+        bool zeroForOne = true;
+        // Default user - swap should execute, they should pay 1% fee!
+        console2.log("Making first swap");
+        BalanceDelta delta = swap(poolKey, amount, zeroForOne, ZERO_BYTES);
+        int128 a0 = delta.amount0();
+        int128 a1 = delta.amount1();
+        // Delta is changes in the pool, so we swapped 1k for 989, price is 1 so 1%
+        //console2.log(a0);
+        //console2.log(a1);
+        assertEq(a0, 1000);
+        assertEq(a1, -989);
+
+        // now we'll set the user to have a reduced fee - just set it to 0?  Then we should see that reflected in swap
+        //suaveHook.setUserFee(address(this), 1);
+        suaveHook.setUserFee(address(swapRouter), 0);
+
+        //zeroForOne = false;
+        // Default user - swap should execute, they should pay 1% fee!
+        delta = swap(poolKey, amount, zeroForOne, ZERO_BYTES);
+        // console2.log("Did two swaps...");
+        a0 = delta.amount0();
+        a1 = delta.amount1();
+
+        // price has slightly moved, this is essentially 0 fees...
+        assertEq(a0, 1000);
+        assertEq(a1, -999);
+
+        // console2.log(a0);
+        // console2.log(a1);
         //// ------------------- //
-        //assertEq(counter.beforeSwapCount(poolId), 1);
-        //assertEq(counter.afterSwapCount(poolId), 1);
+        //assertEq(suaveHook.beforeSwapCount(poolId), 1);
+        //assertEq(suaveHook.afterSwapCount(poolId), 1);
     }
 }

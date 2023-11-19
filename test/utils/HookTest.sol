@@ -9,6 +9,7 @@ import {PoolKey} from "@uniswap/v4-core/contracts/types/PoolKey.sol";
 import {PoolModifyPositionTest} from "@uniswap/v4-core/contracts/test/PoolModifyPositionTest.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/contracts/test/PoolSwapTest.sol";
 import {PoolDonateTest} from "@uniswap/v4-core/contracts/test/PoolDonateTest.sol";
+import {BalanceDelta} from "@uniswap/v4-core/contracts/types/BalanceDelta.sol";
 
 import {TestERC20} from "@uniswap/v4-core/contracts/test/TestERC20.sol";
 import {TickMath} from "@uniswap/v4-core/contracts/libraries/TickMath.sol";
@@ -43,7 +44,9 @@ contract HookTest is Test {
         manager = new PoolManager(500000);
 
         // Helpers for interacting with the pool
-        modifyPositionRouter = new PoolModifyPositionTest(IPoolManager(address(manager)));
+        modifyPositionRouter = new PoolModifyPositionTest(
+            IPoolManager(address(manager))
+        );
         swapRouter = new PoolSwapTest(IPoolManager(address(manager)));
         donateRouter = new PoolDonateTest(IPoolManager(address(manager)));
 
@@ -56,16 +59,21 @@ contract HookTest is Test {
         token1.approve(address(swapRouter), amount);
     }
 
-    function swap(PoolKey memory key, int256 amountSpecified, bool zeroForOne, bytes memory hookData) internal {
+    function swap(
+        PoolKey memory key,
+        int256 amountSpecified,
+        bool zeroForOne,
+        bytes memory hookData
+    ) internal returns (BalanceDelta delta) {
         IPoolManager.SwapParams memory params = IPoolManager.SwapParams({
             zeroForOne: zeroForOne,
             amountSpecified: amountSpecified,
             sqrtPriceLimitX96: zeroForOne ? MIN_PRICE_LIMIT : MAX_PRICE_LIMIT // unlimited impact
         });
 
-        PoolSwapTest.TestSettings memory testSettings =
-            PoolSwapTest.TestSettings({withdrawTokens: true, settleUsingTransfer: true});
+        PoolSwapTest.TestSettings memory testSettings = PoolSwapTest
+            .TestSettings({withdrawTokens: true, settleUsingTransfer: true});
 
-        swapRouter.swap(key, params, testSettings, hookData);
+        return swapRouter.swap(key, params, testSettings, hookData);
     }
 }
